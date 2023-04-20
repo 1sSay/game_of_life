@@ -6,10 +6,14 @@ import numpy as np
 
 
 class GameOfLife:
-    def __init__(self, field_size: tuple, cells: list) -> None:
+    def __init__(
+        self, field_size: tuple, cells: list, resize_coefficient: int = 1
+    ) -> None:
         self.field = None
         self.alive_cells = list()
-        
+        self.resize_coefficient = resize_coefficient
+        self.greed = 0
+
         self.create_field(field_size)
         self.set_start_position(cells)
 
@@ -19,6 +23,10 @@ class GameOfLife:
     def set_start_position(self, cells: list) -> None:
         self.alive_cells = cells
         self.field = np.zeros(self.field.shape, dtype=np.uint8)
+
+    def clear(self):
+        self.create_field(self.field.shape)
+        self.set_start_position(list())
 
     def get_around(self, coord: tuple) -> list:
         x, y = coord
@@ -34,7 +42,22 @@ class GameOfLife:
 
         return ans
 
-    def play(self, iterations: int, resize_coefficient: int=1) -> np.array:
+    def prepare_frame(self) -> np.array:
+        img = cv.resize(
+            self.field,
+            [i * self.resize_coefficient for i in self.field.shape],
+            interpolation=cv.INTER_NEAREST,
+        )
+        
+        if self.greed:
+            for i in range(1, self.field.shape[0]):
+                img[i * self.resize_coefficient, :] = 64
+            for j in range(1, self.field.shape[1]):
+                img[:, j * self.resize_coefficient] = 64
+
+        return img
+
+    def play(self, iterations: int) -> np.array:
         for it in range(iterations):
             neighbors = dict()
 
@@ -62,26 +85,54 @@ class GameOfLife:
 
             self.alive_cells = new_alive
 
-            img = cv.resize(self.field,
-                            [i * resize_coefficient for i in self.field.shape],
-                            interpolation=cv.INTER_NEAREST)
-            yield img
+            yield self.prepare_frame()
 
 
-if __name__ == '__main__':
+def mouse_event(event, x, y, flags, param):
+    x = x // RESIZE_COEFFICIENT
+    y = y // RESIZE_COEFFICIENT
+
+    if event == cv.EVENT_LBUTTONDOWN:
+        cell_status = game.field[y, x]
+
+        if cell_status == 0:
+            game.field[y, x] = 255
+            game.alive_cells.append((y, x))
+        else:
+            game.field[y, x] = 0
+            game.alive_cells.remove((y, x))
+
+        cv.imshow("Game of Life", game.prepare_frame())
+
+
+if __name__ == "__main__":
     FIELD_SIZE = (100, 100)
-    ITERATIONS = 1000
-    RESIZE_COEFFICIENT = 6
-    
-    cv.namedWindow('Game of Life')
+    ITERATIONS = 10000
+    RESIZE_COEFFICIENT = 8
+    RANDOM_CELLS_COUNT = 0
+
+    cv.namedWindow("Game of Life")
+    cv.setMouseCallback("Game of Life", mouse_event)
 
     start_cells = list()
-    for i in range(1000):
-        start_cells.append((random.randint(0, FIELD_SIZE[0] - 1),
-                            random.randint(0, FIELD_SIZE[1] - 1)))
-    
-    game = GameOfLife(FIELD_SIZE, start_cells)
+    for i in range(RANDOM_CELLS_COUNT):
+        start_cells.append(
+            (random.randint(0, FIELD_SIZE[0] - 1), random.randint(0, FIELD_SIZE[1] - 1))
+        )
 
-    for frame in game.play(ITERATIONS, RESIZE_COEFFICIENT):
-        cv.imshow('Game of Life', frame)
-        cv.waitKey(5)
+    game = GameOfLife(FIELD_SIZE, start_cells, resize_coefficient=RESIZE_COEFFICIENT)
+
+    for frame in game.play(ITERATIONS):
+        cv.imshow("Game of Life", frame)
+        
+        if (cv.waitKey(100) & 0xFF) == ord("q"):
+            while True:
+                event = cv.waitKey(100) & 0xFF
+                if event == ord("q"):
+                    break
+                if event == ord("d"):
+                    game.clear()
+                    cv.imshow("Game of Life", game.prepare_frame())
+                if event == ord("g"):
+                    game.greed = (not game.greed)
+                    cv.imshow("Game of Life", game.prepare_frame())
